@@ -1,0 +1,55 @@
+name: Convert HTML to Markdown & Fix Links
+
+# Triggered when Wiki.js pushes changes to the repo
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '**.html'         # Only when HTML files change
+      - 'home.md'         # Or when homepage (navigation) changes
+
+# Prevent multiple runs stacking up
+concurrency:
+  group: wiki-convert
+  cancel-in-progress: true
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write      # Needed to push commits back
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Convert HTML to Markdown
+        run: python3 scripts/html2md.py .
+
+      - name: Fix Wiki.js internal links
+        run: python3 scripts/fix-links.py .
+
+      - name: Commit and push if changes
+        run: |
+          git config user.name "wiki-bot"
+          git config user.email "bot@lvshu.wiki"
+
+          # Stage all changes
+          git add -A
+
+          # Check if there are changes to commit
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "auto: convert HTML to MD, fix internal links [skip ci]"
+            git push
+            echo "Changes committed and pushed"
+          fi
