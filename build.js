@@ -80,23 +80,21 @@ function parseFrontmatter(content) {
 }
 
 function generateToc(headings) {
-  if (headings.length < 2) return "";  // Too few headings, skip TOC
+  if (headings.length < 2) return "";
 
-  let html = '<details open class="toc">\n';
-  html += '  <summary><strong>目录</strong></summary>\n';
+  let html = '<nav class="toc">\n';
+  html += '  <div class="toc-title">目录</div>\n';
   html += '  <ul>\n';
 
   for (const h of headings) {
-    const indent = "    ".repeat(h.level - 2);
-    html += `${indent}    <li class="toc-h${h.level}"><a href="#${h.id}">${h.text}</a></li>\n`;
+    html += `    <li class="toc-h${h.level}"><a href="#${h.id}">${h.text}</a></li>\n`;
   }
 
-  html += '  </ul>\n</details>\n';
+  html += '  </ul>\n</nav>\n';
   return html;
 }
 
 function generateHtml(mdContent, filePath, allPages) {
-  // Reset TOC headings
   tocHeadings = [];
 
   const { frontmatter, body } = parseFrontmatter(mdContent);
@@ -105,7 +103,6 @@ function generateHtml(mdContent, filePath, allPages) {
 
   const htmlBody = marked.parse(body);
 
-  // Fix internal links: .md -> .html (for Cloudflare Pages)
   const fixedBody = htmlBody
     .replace(
       /href="([^"]+)\.md"/g,
@@ -120,10 +117,8 @@ function generateHtml(mdContent, filePath, allPages) {
       }
     );
 
-  // Generate TOC
   const tocHtml = generateToc(tocHeadings);
-
-  // Generate title heading (h1) if page has TOC or content
+  const hasToc = tocHtml !== "";
   const titleHeading = `<h1>${escapeHtml(title)}</h1>`;
 
   return `<!DOCTYPE html>
@@ -142,7 +137,8 @@ function generateHtml(mdContent, filePath, allPages) {
       --link: #1d4ed8;
       --link-hover: #1e40af;
       --code-bg: #f5f5f4;
-      --toc-bg: #fafaf9;
+      --sidebar-bg: #fafaf9;
+      --active: #1d4ed8;
     }
     @media (prefers-color-scheme: dark) {
       :root {
@@ -153,52 +149,108 @@ function generateHtml(mdContent, filePath, allPages) {
         --link: #93c5fd;
         --link-hover: #bfdbfe;
         --code-bg: #292524;
-        --toc-bg: #292524;
+        --sidebar-bg: #1c1917;
+        --active: #93c5fd;
       }
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
       background: var(--bg);
       color: var(--text);
       line-height: 1.7;
-      max-width: 860px;
-      margin: 0 auto;
-      padding: 2rem 1.5rem;
     }
 
-    /* Navigation */
-    nav.breadcrumb { margin-bottom: 1.5rem; padding-bottom: 0.8rem; border-bottom: 1px solid var(--border); font-size: 0.95em; }
+    /* ── Layout ── */
+    .page {
+      display: flex;
+      max-width: 1100px;
+      margin: 0 auto;
+      min-height: 100vh;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: 240px;
+      flex-shrink: 0;
+      padding: 2rem 0 2rem 1.5rem;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      border-right: 1px solid var(--border);
+      background: var(--sidebar-bg);
+      font-size: 0.88em;
+    }
+    .sidebar .toc-title {
+      font-weight: 700;
+      font-size: 0.85em;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      margin-bottom: 0.8em;
+    }
+    .sidebar ul { list-style: none; padding: 0; }
+    .sidebar li { margin: 0.2em 0; line-height: 1.5; }
+    .sidebar a {
+      color: var(--muted);
+      text-decoration: none;
+      display: block;
+      padding: 0.15em 0;
+      transition: color 0.15s;
+    }
+    .sidebar a:hover { color: var(--link); }
+    .sidebar a.active {
+      color: var(--active);
+      font-weight: 600;
+    }
+    .sidebar .toc-h2 { padding-left: 0; }
+    .sidebar .toc-h3 { padding-left: 0.8em; }
+    .sidebar .toc-h4 { padding-left: 1.6em; }
+
+    /* Mobile sidebar toggle */
+    .toc-toggle {
+      display: none;
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--link);
+      color: #fff;
+      border: none;
+      font-size: 1.2em;
+      cursor: pointer;
+      z-index: 100;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+
+    /* ── Main content ── */
+    .main {
+      flex: 1;
+      min-width: 0;
+      padding: 2rem 2rem 3rem 2.5rem;
+      max-width: 760px;
+    }
+    nav.breadcrumb { margin-bottom: 1rem; font-size: 0.9em; }
     nav.breadcrumb a { color: var(--link); text-decoration: none; }
     nav.breadcrumb a:hover { color: var(--link-hover); text-decoration: underline; }
 
-    /* TOC */
-    .toc {
-      background: var(--toc-bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 0.8em 1.2em;
-      margin: 1em 0 2em 0;
-      font-size: 0.92em;
+    /* ── No-sidebar pages (home) ── */
+    .page.no-sidebar .main {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem 3rem 1.5rem;
     }
-    .toc summary {
-      cursor: pointer;
-      color: var(--text);
-      padding: 0.2em 0;
-      user-select: none;
-    }
-    .toc summary:hover { color: var(--link); }
-    .toc ul { list-style: none; padding-left: 0; margin-top: 0.5em; }
-    .toc li { margin: 0.35em 0; line-height: 1.6; }
-    .toc a { color: var(--link); text-decoration: none; }
-    .toc a:hover { color: var(--link-hover); text-decoration: underline; }
-    .toc-h2 { padding-left: 0; }
-    .toc-h3 { padding-left: 1.2em; }
-    .toc-h4 { padding-left: 2.4em; }
 
-    /* Content */
+    /* ── Typography ── */
     h1, h2, h3, h4 { color: var(--text); font-weight: 600; scroll-margin-top: 1em; }
     h1 { font-size: 1.8em; border-bottom: 2px solid var(--border); padding-bottom: 0.3em; margin-bottom: 1em; }
+    h2 { font-size: 1.5em; margin-top: 1.5em; margin-bottom: 0.5em; }
+    h3 { font-size: 1.3em; margin-top: 1.3em; margin-bottom: 0.4em; }
+    h4 { font-size: 1.1em; margin-top: 1.1em; margin-bottom: 0.3em; }
     a { color: var(--link); text-decoration: none; }
     a:hover { color: var(--link-hover); text-decoration: underline; }
     table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: 0.95em; }
@@ -213,29 +265,100 @@ function generateHtml(mdContent, filePath, allPages) {
     hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
     footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.85em; text-align: center; }
 
-    @media (max-width: 600px) {
-      body { padding: 1rem; }
-      table { font-size: 0.8em; }
-      .toc { padding: 0.6em 0.8em; }
+    /* ── Mobile ── */
+    @media (max-width: 768px) {
+      .page { flex-direction: column; }
+      .sidebar {
+        display: none;
+        position: fixed;
+        top: 0; left: 0;
+        width: 280px;
+        height: 100vh;
+        z-index: 99;
+        padding: 2rem 1.5rem;
+        border-right: 1px solid var(--border);
+        box-shadow: 2px 0 12px rgba(0,0,0,0.15);
+      }
+      .sidebar.open { display: block; }
+      .toc-toggle { display: flex; align-items: center; justify-content: center; }
+      .main { padding: 1.5rem 1rem 5rem 1rem; }
+      .page.no-sidebar .main { padding: 1.5rem 1rem 3rem 1rem; }
+      h1 { font-size: 1.4em; }
     }
   </style>
 </head>
 <body>
-  <nav class="breadcrumb">
-    <a href="/">← 返回首页</a>
-  </nav>
+  <div class="page${hasToc ? "" : " no-sidebar"}">
 
-  ${titleHeading}
+    ${hasToc ? `
+    <aside class="sidebar" id="sidebar">
+      ${tocHtml}
+    </aside>
+    <button class="toc-toggle" id="tocToggle" aria-label="目录">☰</button>` : ""}
 
-  ${tocHtml}
+    <div class="main">
+      <nav class="breadcrumb">
+        <a href="/">← 返回首页</a>
+      </nav>
 
-  <main>
-    ${fixedBody}
-  </main>
+      ${titleHeading}
 
-  <footer>
-    <p>疏律 · 开源法律条文资料库 · Powered by <a href="https://wiki.js.org">Wiki.js</a></p>
-  </footer>
+      <main>
+        ${fixedBody}
+      </main>
+
+      <footer>
+        <p>疏律 · 开源法律条文资料库 · Powered by <a href="https://wiki.js.org">Wiki.js</a></p>
+      </footer>
+    </div>
+  </div>
+
+  ${hasToc ? `
+  <script>
+    // Highlight active TOC item on scroll
+    (function() {
+      const headings = document.querySelectorAll('h2[id], h3[id], h4[id]');
+      const links = document.querySelectorAll('.sidebar a');
+      if (!headings.length || !links.length) return;
+
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach(entry => {
+            if (entry.isIntersecting) {
+              links.forEach(a => a.classList.remove('active'));
+              const link = document.querySelector('.sidebar a[href="#' + entry.target.id + '"]');
+              if (link) link.classList.add('active');
+            }
+          });
+        },
+        { rootMargin: '-20% 0px -70% 0px' }
+      );
+
+      headings.forEach(h => observer.observe(h));
+
+      // Mobile: toggle sidebar
+      const sidebar = document.getElementById('sidebar');
+      const toggle = document.getElementById('tocToggle');
+      if (toggle) {
+        toggle.addEventListener('click', () => {
+          sidebar.classList.toggle('open');
+        });
+        // Close sidebar when clicking a link (mobile)
+        sidebar.querySelectorAll('a').forEach(a => {
+          a.addEventListener('click', () => {
+            sidebar.classList.remove('open');
+          });
+        });
+        // Close sidebar when clicking outside
+        document.addEventListener('click', (e) => {
+          if (!sidebar.contains(e.target) && e.target !== toggle) {
+            sidebar.classList.remove('open');
+          }
+        });
+      }
+    })();
+  </script>` : ""}
+
 </body>
 </html>`;
 }
