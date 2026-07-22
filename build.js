@@ -6,7 +6,8 @@
  * - Parses Wiki.js YAML frontmatter (title, description)
  * - Converts Markdown to HTML using marked
  * - home.md -> index.html
- * - Generates clean, readable HTML with basic styling
+ * - Auto-generates Table of Contents (TOC) from headings
+ * - Clean, readable HTML with light/dark mode
  * - Preserves directory structure
  * - Handles Chinese filenames (URL-encoded links)
  */
@@ -18,16 +19,34 @@ const { marked } = require("marked");
 const SRC_DIR = ".";
 const OUT_DIR = "_site";
 
-// Customize marked renderer for legal document styling
+// Collect headings for TOC generation
+let tocHeadings = [];
+
+function slugify(text) {
+  return text
+    .toLowerCase()
+    .replace(/<[^>]+>/g, "")       // strip HTML tags
+    .replace(/[^\w一-鿿㐀-䶿豈-﫿-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    || "heading";
+}
+
+// Customize marked renderer
 const renderer = new marked.Renderer();
 
-// Make headings cleaner
 renderer.heading = function (text, level) {
+  const id = slugify(text);
   const sizes = { 1: "1.8em", 2: "1.5em", 3: "1.3em", 4: "1.1em" };
-  return `<h${level} style="margin-top:1.5em;margin-bottom:0.5em;font-size:${sizes[level] || "1em"}">${text}</h${level}>`;
+
+  // Collect for TOC (skip h1 since page title is already h1)
+  if (level >= 2 && level <= 4) {
+    tocHeadings.push({ text: text.replace(/<[^>]+>/g, ""), level, id });
+  }
+
+  return `<h${level} id="${id}" style="margin-top:1.5em;margin-bottom:0.5em;font-size:${sizes[level] || "1em"}">${text}</h${level}>`;
 };
 
-// Make paragraphs readable
 renderer.paragraph = function (text) {
   return `<p style="margin:0.8em 0;line-height:1.8">${text}</p>`;
 };
@@ -38,10 +57,6 @@ marked.setOptions({
   breaks: false,
 });
 
-/**
- * Parse Wiki.js YAML frontmatter from markdown content.
- * Returns { frontmatter, body } where body is the markdown without frontmatter.
- */
 function parseFrontmatter(content) {
   const match = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
   if (!match) {
@@ -64,10 +79,26 @@ function parseFrontmatter(content) {
   return { frontmatter, body };
 }
 
-/**
- * Generate a complete HTML page from markdown content.
- */
+function generateToc(headings) {
+  if (headings.length < 2) return "";  // Too few headings, skip TOC
+
+  let html = '<details open class="toc">\n';
+  html += '  <summary><strong>目录</strong></summary>\n';
+  html += '  <ul>\n';
+
+  for (const h of headings) {
+    const indent = "    ".repeat(h.level - 2);
+    html += `${indent}    <li class="toc-h${h.level}"><a href="#${h.id}">${h.text}</a></li>\n`;
+  }
+
+  html += '  </ul>\n</details>\n';
+  return html;
+}
+
 function generateHtml(mdContent, filePath, allPages) {
+  // Reset TOC headings
+  tocHeadings = [];
+
   const { frontmatter, body } = parseFrontmatter(mdContent);
   const title = frontmatter.title || path.basename(filePath, ".md");
   const description = frontmatter.description || "";
@@ -82,13 +113,18 @@ function generateHtml(mdContent, filePath, allPages) {
         if (p1.startsWith("http://") || p1.startsWith("https://")) {
           return match;
         }
-        // home.md -> index.html -> /
         if (p1 === "home" || p1.endsWith("/home")) {
           return 'href="/"';
         }
         return `href="${p1}.html"`;
       }
     );
+
+  // Generate TOC
+  const tocHtml = generateToc(tocHeadings);
+
+  // Generate title heading (h1) if page has TOC or content
+  const titleHeading = `<h1>${escapeHtml(title)}</h1>`;
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -106,6 +142,7 @@ function generateHtml(mdContent, filePath, allPages) {
       --link: #1d4ed8;
       --link-hover: #1e40af;
       --code-bg: #f5f5f4;
+      --toc-bg: #fafaf9;
     }
     @media (prefers-color-scheme: dark) {
       :root {
@@ -116,6 +153,7 @@ function generateHtml(mdContent, filePath, allPages) {
         --link: #93c5fd;
         --link-hover: #bfdbfe;
         --code-bg: #292524;
+        --toc-bg: #292524;
       }
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -124,14 +162,42 @@ function generateHtml(mdContent, filePath, allPages) {
       background: var(--bg);
       color: var(--text);
       line-height: 1.7;
-      max-width: 800px;
+      max-width: 860px;
       margin: 0 auto;
       padding: 2rem 1.5rem;
     }
-    nav { margin-bottom: 2rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border); }
-    nav a { color: var(--link); text-decoration: none; font-size: 0.95em; }
-    nav a:hover { color: var(--link-hover); text-decoration: underline; }
-    h1, h2, h3, h4 { color: var(--text); font-weight: 600; }
+
+    /* Navigation */
+    nav.breadcrumb { margin-bottom: 1.5rem; padding-bottom: 0.8rem; border-bottom: 1px solid var(--border); font-size: 0.95em; }
+    nav.breadcrumb a { color: var(--link); text-decoration: none; }
+    nav.breadcrumb a:hover { color: var(--link-hover); text-decoration: underline; }
+
+    /* TOC */
+    .toc {
+      background: var(--toc-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.8em 1.2em;
+      margin: 1em 0 2em 0;
+      font-size: 0.92em;
+    }
+    .toc summary {
+      cursor: pointer;
+      color: var(--text);
+      padding: 0.2em 0;
+      user-select: none;
+    }
+    .toc summary:hover { color: var(--link); }
+    .toc ul { list-style: none; padding-left: 0; margin-top: 0.5em; }
+    .toc li { margin: 0.35em 0; line-height: 1.6; }
+    .toc a { color: var(--link); text-decoration: none; }
+    .toc a:hover { color: var(--link-hover); text-decoration: underline; }
+    .toc-h2 { padding-left: 0; }
+    .toc-h3 { padding-left: 1.2em; }
+    .toc-h4 { padding-left: 2.4em; }
+
+    /* Content */
+    h1, h2, h3, h4 { color: var(--text); font-weight: 600; scroll-margin-top: 1em; }
     h1 { font-size: 1.8em; border-bottom: 2px solid var(--border); padding-bottom: 0.3em; margin-bottom: 1em; }
     a { color: var(--link); text-decoration: none; }
     a:hover { color: var(--link-hover); text-decoration: underline; }
@@ -146,19 +212,27 @@ function generateHtml(mdContent, filePath, allPages) {
     li { margin: 0.3em 0; line-height: 1.8; }
     hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
     footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.85em; text-align: center; }
+
     @media (max-width: 600px) {
       body { padding: 1rem; }
       table { font-size: 0.8em; }
+      .toc { padding: 0.6em 0.8em; }
     }
   </style>
 </head>
 <body>
-  <nav>
+  <nav class="breadcrumb">
     <a href="/">← 返回首页</a>
   </nav>
+
+  ${titleHeading}
+
+  ${tocHtml}
+
   <main>
     ${fixedBody}
   </main>
+
   <footer>
     <p>疏律 · 开源法律条文资料库 · Powered by <a href="https://wiki.js.org">Wiki.js</a></p>
   </footer>
@@ -175,9 +249,6 @@ function escapeHtml(text) {
     .replace(/'/g, "&#039;");
 }
 
-/**
- * Recursively find all .md files, excluding hidden dirs and scripts/.
- */
 function findMdFiles(dir, baseDir) {
   const results = [];
   const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -203,26 +274,25 @@ function findMdFiles(dir, baseDir) {
 function main() {
   console.log("Building 疏律 static site...\n");
 
-  // Clean output directory
   if (fs.existsSync(OUT_DIR)) {
     fs.rmSync(OUT_DIR, { recursive: true });
   }
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
-  // Find all markdown files
   const mdFiles = findMdFiles(SRC_DIR, SRC_DIR);
   console.log(`Found ${mdFiles.length} Markdown files`);
 
-  // Process each file
   let processed = 0;
+  let tocCount = 0;
+
   for (const mdFile of mdFiles) {
     const srcPath = path.join(SRC_DIR, mdFile);
     const content = fs.readFileSync(srcPath, "utf-8");
 
-    // Generate HTML
     const html = generateHtml(content, mdFile, mdFiles);
 
-    // Determine output path
+    if (tocHeadings.length >= 2) tocCount++;
+
     let outRelPath;
     if (mdFile === "home.md") {
       outRelPath = "index.html";
@@ -245,11 +315,10 @@ function main() {
     }
   }
 
-  // Copy subdirectory .md files as .html too (already handled above)
-  // Copy any static assets if needed
   console.log(`\nBuild complete: ${processed} pages written to ${OUT_DIR}/`);
   console.log(`  index.html (from home.md)`);
   console.log(`  ${processed - 1} content pages`);
+  console.log(`  ${tocCount} pages with Table of Contents`);
 }
 
 main();
