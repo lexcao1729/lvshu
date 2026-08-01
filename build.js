@@ -7,6 +7,7 @@
  * - Converts Markdown to HTML using marked
  * - home.md -> index.html
  * - Auto-generates Table of Contents (TOC) from headings
+ * - Client-side search bar in sidebar / homepage
  * - Clean, readable HTML with light/dark mode
  * - Preserves directory structure
  * - Handles Chinese filenames (URL-encoded links)
@@ -94,7 +95,18 @@ function generateToc(headings) {
   return html;
 }
 
-function generateHtml(mdContent, filePath, allPages) {
+function generateSearchHtml() {
+  return `
+    <div class="sidebar-search">
+      <div class="search-title">搜索</div>
+      <div class="search-box">
+        <input type="text" id="searchInput" placeholder="搜索页面…" autocomplete="off">
+        <div class="search-results" id="searchResults"></div>
+      </div>
+    </div>`;
+}
+
+function generateHtml(mdContent, filePath, allPages, allPagesInfo) {
   tocHeadings = [];
 
   const { frontmatter, body } = parseFrontmatter(mdContent);
@@ -120,6 +132,9 @@ function generateHtml(mdContent, filePath, allPages) {
   const tocHtml = generateToc(tocHeadings);
   const hasToc = tocHtml !== "";
   const titleHeading = `<h1>${escapeHtml(title)}</h1>`;
+
+  // Build page index JSON for client-side search
+  const pageIndexJson = JSON.stringify(allPagesInfo);
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -182,6 +197,11 @@ function generateHtml(mdContent, filePath, allPages) {
       border-right: 1px solid var(--border);
       background: var(--sidebar-bg);
       font-size: 0.88em;
+      display: flex;
+      flex-direction: column;
+    }
+    .sidebar .toc {
+      flex: 0 0 auto;
     }
     .sidebar .toc-title {
       font-weight: 700;
@@ -208,6 +228,108 @@ function generateHtml(mdContent, filePath, allPages) {
     .sidebar .toc-h2 { padding-left: 0; }
     .sidebar .toc-h3 { padding-left: 0.8em; }
     .sidebar .toc-h4 { padding-left: 1.6em; }
+
+    /* ── Sidebar search ── */
+    .sidebar-search {
+      flex: 1 0 auto;
+      margin-top: 1.5rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .sidebar-search .search-title {
+      font-weight: 700;
+      font-size: 0.85em;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      margin-bottom: 0.6em;
+    }
+    .search-box {
+      position: relative;
+    }
+    .search-box input {
+      width: 100%;
+      padding: 0.4em 0.6em;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 0.9em;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .search-box input:focus {
+      border-color: var(--link);
+    }
+    .search-results {
+      display: none;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      margin-top: 4px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      max-height: 300px;
+      overflow-y: auto;
+      z-index: 50;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .search-results.visible {
+      display: block;
+    }
+    .search-result-item {
+      display: block;
+      padding: 0.4em 0.8em;
+      color: var(--text);
+      text-decoration: none;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.92em;
+    }
+    .search-result-item:last-child {
+      border-bottom: none;
+    }
+    .search-result-item:hover,
+    .search-result-item.active {
+      background: var(--code-bg);
+      color: var(--link);
+    }
+    .search-result-item .result-path {
+      display: block;
+      font-size: 0.78em;
+      color: var(--muted);
+      margin-top: 0.1em;
+    }
+    .search-no-results {
+      padding: 0.6em 0.8em;
+      color: var(--muted);
+      font-size: 0.88em;
+      text-align: center;
+    }
+
+    /* ── Homepage search ── */
+    .home-search {
+      margin-bottom: 1.5rem;
+    }
+    .home-search .search-box {
+      max-width: 400px;
+    }
+    .home-search .search-box input {
+      padding: 0.55em 0.8em;
+      font-size: 0.95em;
+    }
+    .home-search .search-results {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+    }
 
     /* Mobile sidebar toggle */
     .toc-toggle {
@@ -279,11 +401,14 @@ function generateHtml(mdContent, filePath, allPages) {
         border-right: 1px solid var(--border);
         box-shadow: 2px 0 12px rgba(0,0,0,0.15);
       }
-      .sidebar.open { display: block; }
+      .sidebar.open { display: flex; }
       .toc-toggle { display: flex; align-items: center; justify-content: center; }
       .main { padding: 1.5rem 1rem 5rem 1rem; }
       .page.no-sidebar .main { padding: 1.5rem 1rem 3rem 1rem; }
       h1 { font-size: 1.4em; }
+      .search-results {
+        max-height: 240px;
+      }
     }
   </style>
 </head>
@@ -293,6 +418,7 @@ function generateHtml(mdContent, filePath, allPages) {
     ${hasToc ? `
     <aside class="sidebar" id="sidebar">
       ${tocHtml}
+      ${generateSearchHtml()}
     </aside>
     <button class="toc-toggle" id="tocToggle" aria-label="目录">☰</button>` : ""}
 
@@ -300,6 +426,14 @@ function generateHtml(mdContent, filePath, allPages) {
       <nav class="breadcrumb">
         <a href="/">← 返回首页</a>
       </nav>
+
+      ${!hasToc ? `
+      <div class="home-search">
+        <div class="search-box">
+          <input type="text" id="searchInput" placeholder="搜索页面…" autocomplete="off">
+          <div class="search-results" id="searchResults"></div>
+        </div>
+      </div>` : ""}
 
       ${titleHeading}
 
@@ -313,12 +447,17 @@ function generateHtml(mdContent, filePath, allPages) {
     </div>
   </div>
 
+  <script>
+    // Page index for search (embedded at build time)
+    const PAGE_INDEX = ${pageIndexJson};
+  </script>
+
   ${hasToc ? `
   <script>
     // Highlight active TOC item on scroll
     (function() {
       const headings = document.querySelectorAll('h2[id], h3[id], h4[id]');
-      const links = document.querySelectorAll('.sidebar a');
+      const links = document.querySelectorAll('.sidebar .toc a');
       if (!headings.length || !links.length) return;
 
       const observer = new IntersectionObserver(
@@ -326,7 +465,7 @@ function generateHtml(mdContent, filePath, allPages) {
           entries.forEach(entry => {
             if (entry.isIntersecting) {
               links.forEach(a => a.classList.remove('active'));
-              const link = document.querySelector('.sidebar a[href="#' + entry.target.id + '"]');
+              const link = document.querySelector('.sidebar .toc a[href="#' + entry.target.id + '"]');
               if (link) link.classList.add('active');
             }
           });
@@ -358,6 +497,104 @@ function generateHtml(mdContent, filePath, allPages) {
       }
     })();
   </script>` : ""}
+
+  <script>
+    // Client-side search (works on all pages)
+    (function() {
+      const input = document.getElementById('searchInput');
+      const results = document.getElementById('searchResults');
+      if (!input || !results) return;
+
+      let activeIdx = -1;
+
+      function doSearch(query) {
+        activeIdx = -1;
+        results.innerHTML = '';
+
+        if (!query || query.trim().length < 1) {
+          results.classList.remove('visible');
+          return;
+        }
+
+        const q = query.trim().toLowerCase();
+        const matches = PAGE_INDEX
+          .filter(p => p.title.toLowerCase().includes(q))
+          .slice(0, 10);
+
+        if (matches.length === 0) {
+          results.innerHTML = '<div class="search-no-results">无匹配结果</div>';
+          results.classList.add('visible');
+          return;
+        }
+
+        results.innerHTML = matches.map((p, i) =>
+          '<a class="search-result-item' + (i === 0 ? ' active' : '') + '" href="' + p.path + '" data-idx="' + i + '">' +
+            p.title +
+            '<span class="result-path">' + p.path + '</span>' +
+          '</a>'
+        ).join('');
+
+        results.classList.add('visible');
+        activeIdx = 0;
+      }
+
+      input.addEventListener('input', function() {
+        doSearch(this.value);
+      });
+
+      input.addEventListener('focus', function() {
+        if (this.value.trim().length >= 1) {
+          doSearch(this.value);
+        }
+      });
+
+      // Keyboard navigation
+      input.addEventListener('keydown', function(e) {
+        const items = results.querySelectorAll('.search-result-item');
+        if (!items.length) return;
+
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          activeIdx = Math.min(activeIdx + 1, items.length - 1);
+          items.forEach(function(item, i) {
+            item.classList.toggle('active', i === activeIdx);
+          });
+          // Scroll into view
+          items[activeIdx].scrollIntoView({ block: 'nearest' });
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          activeIdx = Math.max(activeIdx - 1, 0);
+          items.forEach(function(item, i) {
+            item.classList.toggle('active', i === activeIdx);
+          });
+          items[activeIdx].scrollIntoView({ block: 'nearest' });
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          if (activeIdx >= 0 && items[activeIdx]) {
+            window.location.href = items[activeIdx].getAttribute('href');
+          }
+        } else if (e.key === 'Escape') {
+          results.classList.remove('visible');
+          input.blur();
+        }
+      });
+
+      // Click outside to close
+      document.addEventListener('click', function(e) {
+        if (!input.parentElement.contains(e.target)) {
+          results.classList.remove('visible');
+        }
+      });
+
+      // Click on result item
+      results.addEventListener('click', function(e) {
+        const item = e.target.closest('.search-result-item');
+        if (item) {
+          window.location.href = item.getAttribute('href');
+        }
+      });
+    })();
+  </script>
 
 </body>
 </html>`;
@@ -405,6 +642,24 @@ function main() {
   const mdFiles = findMdFiles(SRC_DIR, SRC_DIR);
   console.log(`Found ${mdFiles.length} Markdown files`);
 
+  // ── First pass: collect page info for search index ──
+  const allPagesInfo = [];
+  for (const mdFile of mdFiles) {
+    const srcPath = path.join(SRC_DIR, mdFile);
+    const content = fs.readFileSync(srcPath, "utf-8");
+    const { frontmatter } = parseFrontmatter(content);
+    const title = frontmatter.title || path.basename(mdFile, ".md");
+    let outPath;
+    if (mdFile === "home.md") {
+      outPath = "/";
+    } else {
+      outPath = "/" + mdFile.replace(/\.md$/, ".html");
+    }
+    allPagesInfo.push({ title: title, path: outPath });
+  }
+  console.log(`  Indexed ${allPagesInfo.length} pages for search`);
+
+  // ── Second pass: generate HTML ──
   let processed = 0;
   let tocCount = 0;
 
@@ -412,7 +667,7 @@ function main() {
     const srcPath = path.join(SRC_DIR, mdFile);
     const content = fs.readFileSync(srcPath, "utf-8");
 
-    const html = generateHtml(content, mdFile, mdFiles);
+    const html = generateHtml(content, mdFile, mdFiles, allPagesInfo);
 
     if (tocHeadings.length >= 2) tocCount++;
 
@@ -442,6 +697,7 @@ function main() {
   console.log(`  index.html (from home.md)`);
   console.log(`  ${processed - 1} content pages`);
   console.log(`  ${tocCount} pages with Table of Contents`);
+  console.log(`  Search enabled on all pages (${allPagesInfo.length} pages indexed)`);
 }
 
 main();
