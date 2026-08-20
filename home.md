@@ -2,7 +2,7 @@
 title: 疏律
 description: 
 published: true
-date: 2026-07-26T07:14:05.562Z
+date: 2026-08-20T06:07:10.959Z
 tags: 
 editor: markdown
 dateCreated: 2024-06-22T23:58:32.150Z
@@ -279,3 +279,6 @@ dateCreated: 2024-06-22T23:58:32.150Z
 [人民法院指导案例](人民法院指导案例 "wikilink")  
 [人民检察院指导案例](人民检察院指导案例 "wikilink")  
 [劳动人事争议典型案例](劳动人事争议典型案例 "wikilink")
+
+## 外国法
+[外国法](/外国法/home)
